@@ -37,6 +37,12 @@ fn write_json_value(path: &Path, value: &Value) -> Result<(), AppError> {
 /// - 仅有 command 字段 → 补齐 type: "stdio"
 pub fn read_mcp_servers_map() -> Result<std::collections::HashMap<String, Value>, AppError> {
     let path = user_config_path();
+    read_mcp_servers_map_from_path(&path)
+}
+
+pub fn read_mcp_servers_map_from_path(
+    path: &Path,
+) -> Result<std::collections::HashMap<String, Value>, AppError> {
     if !path.exists() {
         return Ok(std::collections::HashMap::new());
     }
@@ -77,6 +83,13 @@ pub fn set_mcp_servers_map(
     servers: &std::collections::HashMap<String, Value>,
 ) -> Result<(), AppError> {
     let path = user_config_path();
+    set_mcp_servers_map_to_path(&path, servers)
+}
+
+pub fn set_mcp_servers_map_to_path(
+    path: &Path,
+    servers: &std::collections::HashMap<String, Value>,
+) -> Result<(), AppError> {
     let mut root = if path.exists() {
         read_json_value(&path)?
     } else {

@@ -102,6 +102,10 @@ pub fn get_hermes_config_path() -> PathBuf {
     get_hermes_dir().join("config.yaml")
 }
 
+pub fn get_hermes_config_path_in_dir(dir: &Path) -> PathBuf {
+    dir.join("config.yaml")
+}
+
 fn hermes_write_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
@@ -145,7 +149,10 @@ pub struct HermesModelConfig {
 ///
 /// 如果文件不存在，返回空 Mapping
 pub fn read_hermes_config() -> Result<serde_yaml::Value, AppError> {
-    let path = get_hermes_config_path();
+    read_hermes_config_from_path(&get_hermes_config_path())
+}
+
+pub fn read_hermes_config_from_path(path: &Path) -> Result<serde_yaml::Value, AppError> {
     if !path.exists() {
         return Ok(serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
     }
@@ -433,7 +440,14 @@ fn write_yaml_section_to_config_locked(
     section_key: &str,
     value: &serde_yaml::Value,
 ) -> Result<HermesWriteOutcome, AppError> {
-    let config_path = get_hermes_config_path();
+    write_yaml_section_to_path_locked(get_hermes_config_path(), section_key, value)
+}
+
+fn write_yaml_section_to_path_locked(
+    config_path: PathBuf,
+    section_key: &str,
+    value: &serde_yaml::Value,
+) -> Result<HermesWriteOutcome, AppError> {
     let raw = if config_path.exists() {
         fs::read_to_string(&config_path).map_err(|e| AppError::io(&config_path, e))?
     } else {
@@ -793,9 +807,18 @@ pub fn set_provider(
     name: &str,
     provider_config: serde_json::Value,
 ) -> Result<HermesWriteOutcome, AppError> {
+    set_provider_in_dir(&get_hermes_dir(), name, provider_config)
+}
+
+pub fn set_provider_in_dir(
+    dir: &Path,
+    name: &str,
+    provider_config: serde_json::Value,
+) -> Result<HermesWriteOutcome, AppError> {
     let _guard = hermes_write_lock().lock()?;
 
-    let config = read_hermes_config()?;
+    let config_path = get_hermes_config_path_in_dir(dir);
+    let config = read_hermes_config_from_path(&config_path)?;
     ensure_provider_writable(&config, name, "edit")?;
     let mut providers: Vec<serde_yaml::Value> = config
         .get("custom_providers")
@@ -857,7 +880,7 @@ pub fn set_provider(
     }
 
     let providers_value = serde_yaml::Value::Sequence(providers);
-    write_yaml_section_to_config_locked("custom_providers", &providers_value)
+    write_yaml_section_to_path_locked(config_path, "custom_providers", &providers_value)
 }
 
 /// Remove a custom provider by name.
@@ -967,8 +990,16 @@ pub fn update_mcp_servers_yaml<F>(updater: F) -> Result<(), AppError>
 where
     F: FnOnce(&mut serde_yaml::Mapping) -> Result<(), AppError>,
 {
+    update_mcp_servers_yaml_in_dir(&get_hermes_dir(), updater)
+}
+
+pub fn update_mcp_servers_yaml_in_dir<F>(dir: &Path, updater: F) -> Result<(), AppError>
+where
+    F: FnOnce(&mut serde_yaml::Mapping) -> Result<(), AppError>,
+{
     let _guard = hermes_write_lock().lock()?;
-    let config = read_hermes_config()?;
+    let config_path = get_hermes_config_path_in_dir(dir);
+    let config = read_hermes_config_from_path(&config_path)?;
     let mut servers = config
         .get("mcp_servers")
         .and_then(|v| v.as_mapping())
@@ -976,7 +1007,7 @@ where
         .unwrap_or_default();
     updater(&mut servers)?;
     let value = serde_yaml::Value::Mapping(servers);
-    write_yaml_section_to_config_locked("mcp_servers", &value)?;
+    write_yaml_section_to_path_locked(config_path, "mcp_servers", &value)?;
     Ok(())
 }
 

@@ -355,9 +355,18 @@ pub fn sync_single_server_to_codex(
     }
     use toml_edit::Item;
 
-    // 读取现有的 config.toml
     let config_path = crate::codex_config::get_codex_config_path();
+    sync_single_server_to_codex_path(&config_path, id, server_spec)
+}
 
+pub fn sync_single_server_to_codex_path(
+    config_path: &std::path::Path,
+    id: &str,
+    server_spec: &Value,
+) -> Result<(), AppError> {
+    use toml_edit::Item;
+
+    // 读取现有的 config.toml
     let mut doc = if config_path.exists() {
         let content =
             std::fs::read_to_string(&config_path).map_err(|e| AppError::io(&config_path, e))?;
@@ -408,7 +417,13 @@ pub fn remove_server_from_codex(id: &str) -> Result<(), AppError> {
         return Ok(());
     }
     let config_path = crate::codex_config::get_codex_config_path();
+    remove_server_from_codex_path(&config_path, id)
+}
 
+pub fn remove_server_from_codex_path(
+    config_path: &std::path::Path,
+    id: &str,
+) -> Result<(), AppError> {
     if !config_path.exists() {
         return Ok(()); // 文件不存在，无需删除
     }

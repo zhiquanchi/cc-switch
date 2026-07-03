@@ -197,6 +197,15 @@ pub fn sync_single_server_to_opencode(
     opencode_config::set_mcp_server(id, opencode_spec)
 }
 
+pub fn sync_single_server_to_opencode_dir(
+    dir: &std::path::Path,
+    id: &str,
+    server_spec: &Value,
+) -> Result<(), AppError> {
+    let opencode_spec = convert_to_opencode_format(server_spec)?;
+    opencode_config::set_mcp_server_in_dir(dir, id, opencode_spec)
+}
+
 /// Remove a single MCP server from OpenCode live config
 pub fn remove_server_from_opencode(id: &str) -> Result<(), AppError> {
     if !should_sync_opencode_mcp() {

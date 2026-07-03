@@ -20,6 +20,8 @@ interface DirectorySettingsProps {
   opencodeDir?: string;
   openclawDir?: string;
   hermesDir?: string;
+  wslHomeDir?: string;
+  onWslHomeChange: (value?: string) => void;
   onDirectoryChange: (app: DirectoryAppId, value?: string) => void;
   onBrowseDirectory: (app: DirectoryAppId) => Promise<void>;
   onResetDirectory: (app: DirectoryAppId) => Promise<void>;
@@ -37,6 +39,8 @@ export function DirectorySettings({
   opencodeDir,
   openclawDir,
   hermesDir,
+  wslHomeDir,
+  onWslHomeChange,
   onDirectoryChange,
   onBrowseDirectory,
   onResetDirectory,
@@ -158,6 +162,18 @@ export function DirectorySettings({
           onBrowse={() => onBrowseDirectory("hermes")}
           onReset={() => onResetDirectory("hermes")}
         />
+
+        <DirectoryInput
+          label={t("settings.wslHomeDir")}
+          description={t("settings.wslHomeDirDescription")}
+          value={wslHomeDir}
+          resolvedValue=""
+          placeholder={t("settings.browsePlaceholderWslHome")}
+          onChange={onWslHomeChange}
+          onBrowse={async () => {}}
+          onReset={async () => onWslHomeChange(undefined)}
+          hideBrowse
+        />
       </section>
     </div>
   );
@@ -172,6 +188,7 @@ interface DirectoryInputProps {
   onChange: (value?: string) => void;
   onBrowse: () => Promise<void>;
   onReset: () => Promise<void>;
+  hideBrowse?: boolean;
 }
 
 function DirectoryInput({
@@ -183,6 +200,7 @@ function DirectoryInput({
   onChange,
   onBrowse,
   onReset,
+  hideBrowse = false,
 }: DirectoryInputProps) {
   const { t } = useTranslation();
   const displayValue = useMemo(
@@ -205,6 +223,7 @@ function DirectoryInput({
           className="text-xs"
           onChange={(event) => onChange(event.target.value)}
         />
+      {!hideBrowse && (
         <Button
           type="button"
           variant="outline"
@@ -214,6 +233,7 @@ function DirectoryInput({
         >
           <FolderSearch className="h-4 w-4" />
         </Button>
+      )}
         <Button
           type="button"
           variant="outline"

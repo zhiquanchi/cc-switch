@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use std::collections::HashMap;
+use std::path::Path;
 
 use crate::app_config::{AppType, McpServer};
 use crate::error::AppError;
@@ -8,6 +9,30 @@ use crate::store::AppState;
 
 /// MCP 相关业务逻辑（v3.7.0 统一结构）
 pub struct McpService;
+
+fn sync_single_server_to_claude_path(path: &Path, server: &McpServer) -> Result<(), AppError> {
+    let mut current = crate::claude_mcp::read_mcp_servers_map_from_path(path)?;
+    current.insert(server.id.clone(), server.server.clone());
+    crate::claude_mcp::set_mcp_servers_map_to_path(path, &current)
+}
+
+fn remove_server_from_claude_path(path: &Path, id: &str) -> Result<(), AppError> {
+    let mut current = crate::claude_mcp::read_mcp_servers_map_from_path(path)?;
+    current.remove(id);
+    crate::claude_mcp::set_mcp_servers_map_to_path(path, &current)
+}
+
+fn sync_single_server_to_gemini_path(path: &Path, server: &McpServer) -> Result<(), AppError> {
+    let mut current = crate::gemini_mcp::read_mcp_servers_map_from_path(path)?;
+    current.insert(server.id.clone(), server.server.clone());
+    crate::gemini_mcp::set_mcp_servers_map_to_path(path, &current)
+}
+
+fn remove_server_from_gemini_path(path: &Path, id: &str) -> Result<(), AppError> {
+    let mut current = crate::gemini_mcp::read_mcp_servers_map_from_path(path)?;
+    current.remove(id);
+    crate::gemini_mcp::set_mcp_servers_map_to_path(path, &current)
+}
 
 impl McpService {
     /// 获取所有 MCP 服务器（统一结构）
@@ -111,6 +136,11 @@ impl McpService {
         match app {
             AppType::Claude => {
                 mcp::sync_single_server_to_claude(&Default::default(), &server.id, &server.server)?;
+                if let Some(path) = crate::config_targets::wsl_claude_mcp_path() {
+                    if let Err(err) = sync_single_server_to_claude_path(&path, server) {
+                        log::warn!("WSL Claude MCP 同步失败: {err}");
+                    }
+                }
             }
             AppType::ClaudeDesktop => {
                 log::debug!("Claude Desktop 3P profiles do not use CC Switch MCP sync, skipping");
@@ -118,9 +148,23 @@ impl McpService {
             AppType::Codex => {
                 // Codex uses TOML format, must use the correct function
                 mcp::sync_single_server_to_codex(&Default::default(), &server.id, &server.server)?;
+                if let Some(dir) = crate::config_targets::wsl_app_config_dir(app) {
+                    let path = crate::codex_config::get_codex_config_path_in_dir(&dir);
+                    if let Err(err) =
+                        mcp::sync_single_server_to_codex_path(&path, &server.id, &server.server)
+                    {
+                        log::warn!("WSL Codex MCP 同步失败: {err}");
+                    }
+                }
             }
             AppType::Gemini => {
                 mcp::sync_single_server_to_gemini(&Default::default(), &server.id, &server.server)?;
+                if let Some(dir) = crate::config_targets::wsl_app_config_dir(app) {
+                    let path = crate::gemini_config::get_gemini_settings_path_in_dir(&dir);
+                    if let Err(err) = sync_single_server_to_gemini_path(&path, server) {
+                        log::warn!("WSL Gemini MCP 同步失败: {err}");
+                    }
+                }
             }
             AppType::OpenCode => {
                 mcp::sync_single_server_to_opencode(
@@ -128,6 +172,13 @@ impl McpService {
                     &server.id,
                     &server.server,
                 )?;
+                if let Some(dir) = crate::config_targets::wsl_app_config_dir(app) {
+                    if let Err(err) =
+                        mcp::sync_single_server_to_opencode_dir(&dir, &server.id, &server.server)
+                    {
+                        log::warn!("WSL OpenCode MCP 同步失败: {err}");
+                    }
+                }
             }
             AppType::OpenClaw => {
                 // OpenClaw MCP support is still in development (Issue #4834)
@@ -136,6 +187,13 @@ impl McpService {
             }
             AppType::Hermes => {
                 mcp::sync_single_server_to_hermes(&Default::default(), &server.id, &server.server)?;
+                if let Some(dir) = crate::config_targets::wsl_app_config_dir(app) {
+                    if let Err(err) =
+                        mcp::sync_single_server_to_hermes_dir(&dir, &server.id, &server.server)
+                    {
+                        log::warn!("WSL Hermes MCP 同步失败: {err}");
+                    }
+                }
             }
         }
         Ok(())
@@ -156,14 +214,42 @@ impl McpService {
 
     fn remove_server_from_app(_state: &AppState, id: &str, app: &AppType) -> Result<(), AppError> {
         match app {
-            AppType::Claude => mcp::remove_server_from_claude(id)?,
+            AppType::Claude => {
+                mcp::remove_server_from_claude(id)?;
+                if let Some(path) = crate::config_targets::wsl_claude_mcp_path() {
+                    if let Err(err) = remove_server_from_claude_path(&path, id) {
+                        log::warn!("WSL Claude MCP 删除失败: {err}");
+                    }
+                }
+            }
             AppType::ClaudeDesktop => {
                 log::debug!("Claude Desktop 3P profiles do not use CC Switch MCP sync, skipping");
             }
-            AppType::Codex => mcp::remove_server_from_codex(id)?,
-            AppType::Gemini => mcp::remove_server_from_gemini(id)?,
+            AppType::Codex => {
+                mcp::remove_server_from_codex(id)?;
+                if let Some(dir) = crate::config_targets::wsl_app_config_dir(app) {
+                    let path = crate::codex_config::get_codex_config_path_in_dir(&dir);
+                    if let Err(err) = mcp::remove_server_from_codex_path(&path, id) {
+                        log::warn!("WSL Codex MCP 删除失败: {err}");
+                    }
+                }
+            }
+            AppType::Gemini => {
+                mcp::remove_server_from_gemini(id)?;
+                if let Some(dir) = crate::config_targets::wsl_app_config_dir(app) {
+                    let path = crate::gemini_config::get_gemini_settings_path_in_dir(&dir);
+                    if let Err(err) = remove_server_from_gemini_path(&path, id) {
+                        log::warn!("WSL Gemini MCP 删除失败: {err}");
+                    }
+                }
+            }
             AppType::OpenCode => {
                 mcp::remove_server_from_opencode(id)?;
+                if let Some(dir) = crate::config_targets::wsl_app_config_dir(app) {
+                    if let Err(err) = crate::opencode_config::remove_mcp_server_in_dir(&dir, id) {
+                        log::warn!("WSL OpenCode MCP 删除失败: {err}");
+                    }
+                }
             }
             AppType::OpenClaw => {
                 // OpenClaw MCP support is still in development
@@ -171,6 +257,11 @@ impl McpService {
             }
             AppType::Hermes => {
                 mcp::remove_server_from_hermes(id)?;
+                if let Some(dir) = crate::config_targets::wsl_app_config_dir(app) {
+                    if let Err(err) = mcp::remove_server_from_hermes_dir(&dir, id) {
+                        log::warn!("WSL Hermes MCP 删除失败: {err}");
+                    }
+                }
             }
         }
         Ok(())

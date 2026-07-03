@@ -47,6 +47,10 @@ pub fn get_openclaw_config_path() -> PathBuf {
     get_openclaw_dir().join("openclaw.json")
 }
 
+pub fn get_openclaw_config_path_in_dir(dir: &Path) -> PathBuf {
+    dir.join("openclaw.json")
+}
+
 fn default_openclaw_config_value() -> Value {
     json!({
         "models": {
@@ -197,7 +201,10 @@ pub struct OpenClawToolsConfig {
 ///
 /// 支持 JSON5 格式，返回完整的配置 JSON 对象
 pub fn read_openclaw_config() -> Result<Value, AppError> {
-    let path = get_openclaw_config_path();
+    read_openclaw_config_from_path(&get_openclaw_config_path())
+}
+
+pub fn read_openclaw_config_from_path(path: &Path) -> Result<Value, AppError> {
     if !path.exists() {
         return Ok(default_openclaw_config_value());
     }
@@ -235,7 +242,10 @@ struct OpenClawConfigDocument {
 
 impl OpenClawConfigDocument {
     fn load() -> Result<Self, AppError> {
-        let path = get_openclaw_config_path();
+        Self::load_from_path(get_openclaw_config_path())
+    }
+
+    fn load_from_path(path: PathBuf) -> Result<Self, AppError> {
         let original_source = if path.exists() {
             Some(fs::read_to_string(&path).map_err(|e| AppError::io(&path, e))?)
         } else {
@@ -378,6 +388,16 @@ impl OpenClawConfigDocument {
 
 fn write_root_section(section: &str, value: &Value) -> Result<OpenClawWriteOutcome, AppError> {
     let mut document = OpenClawConfigDocument::load()?;
+    document.set_root_section(section, value)?;
+    document.save()
+}
+
+fn write_root_section_to_path(
+    path: PathBuf,
+    section: &str,
+    value: &Value,
+) -> Result<OpenClawWriteOutcome, AppError> {
+    let mut document = OpenClawConfigDocument::load_from_path(path)?;
     document.set_root_section(section, value)?;
     document.save()
 }
@@ -657,7 +677,16 @@ pub fn get_provider(id: &str) -> Result<Option<Value>, AppError> {
 ///
 /// 写入到 `models.providers`
 pub fn set_provider(id: &str, provider_config: Value) -> Result<OpenClawWriteOutcome, AppError> {
-    let mut full_config = read_openclaw_config()?;
+    set_provider_in_dir(&get_openclaw_dir(), id, provider_config)
+}
+
+pub fn set_provider_in_dir(
+    dir: &Path,
+    id: &str,
+    provider_config: Value,
+) -> Result<OpenClawWriteOutcome, AppError> {
+    let path = get_openclaw_config_path_in_dir(dir);
+    let mut full_config = read_openclaw_config_from_path(&path)?;
     let root = ensure_object(&mut full_config);
     let models = root.entry("models".to_string()).or_insert_with(|| {
         json!({
@@ -676,7 +705,7 @@ pub fn set_provider(id: &str, provider_config: Value) -> Result<OpenClawWriteOut
             "providers": {}
         })
     });
-    write_root_section("models", &models_value)
+    write_root_section_to_path(path, "models", &models_value)
 }
 
 /// 删除供应商配置
@@ -735,6 +764,15 @@ pub fn set_typed_provider(
 ) -> Result<OpenClawWriteOutcome, AppError> {
     let value = serde_json::to_value(config).map_err(|e| AppError::JsonSerialize { source: e })?;
     set_provider(id, value)
+}
+
+pub fn set_typed_provider_in_dir(
+    dir: &Path,
+    id: &str,
+    config: &OpenClawProviderConfig,
+) -> Result<OpenClawWriteOutcome, AppError> {
+    let value = serde_json::to_value(config).map_err(|e| AppError::JsonSerialize { source: e })?;
+    set_provider_in_dir(dir, id, value)
 }
 
 // ============================================================================

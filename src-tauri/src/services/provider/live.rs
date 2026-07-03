@@ -10,15 +10,14 @@ use toml_edit::{DocumentMut, Item, TableLike};
 use crate::app_config::AppType;
 use crate::codex_config::{get_codex_auth_path, get_codex_config_path};
 use crate::config::{delete_file, get_claude_settings_path, read_json_file, write_json_file};
+use crate::config_targets::ConfigTargetKind;
 use crate::database::Database;
 use crate::error::AppError;
 use crate::provider::Provider;
 use crate::services::mcp::McpService;
 use crate::store::AppState;
 
-use super::gemini_auth::{
-    detect_gemini_auth_type, ensure_google_oauth_security_flag, GeminiAuthType,
-};
+use super::gemini_auth::{detect_gemini_auth_type, GeminiAuthType};
 use super::normalize_claude_models_in_value;
 
 pub(crate) fn sanitize_claude_settings_for_live(settings: &Value) -> Value {
@@ -737,9 +736,44 @@ impl LiveSnapshot {
 
 /// Write live configuration snapshot for a provider
 pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Result<(), AppError> {
+    let primary_dir = match app_type {
+        AppType::Claude => crate::config::get_claude_config_dir(),
+        AppType::Codex => crate::codex_config::get_codex_config_dir(),
+        AppType::Gemini => crate::gemini_config::get_gemini_dir(),
+        AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
+        AppType::OpenClaw => crate::openclaw_config::get_openclaw_dir(),
+        AppType::Hermes => crate::hermes_config::get_hermes_dir(),
+        AppType::ClaudeDesktop => {
+            return Err(AppError::localized(
+                "claude_desktop.live.requires_db_context",
+                "Claude Desktop 配置写入需要通过供应商切换流程执行",
+                "Claude Desktop configuration must be written through the provider switch flow",
+            ));
+        }
+    };
+
+    for target in crate::config_targets::app_config_targets(app_type, primary_dir) {
+        let result = write_live_snapshot_to_dir(app_type, provider, &target.dir);
+        match (target.kind, result) {
+            (_, Ok(())) => {}
+            (ConfigTargetKind::Primary, Err(err)) => return Err(err),
+            (ConfigTargetKind::Wsl, Err(err)) => {
+                log::warn!("{}", crate::config_targets::is_wsl_sync_warning(&err));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn write_live_snapshot_to_dir(
+    app_type: &AppType,
+    provider: &Provider,
+    target_dir: &std::path::Path,
+) -> Result<(), AppError> {
     match app_type {
         AppType::Claude => {
-            let path = get_claude_settings_path();
+            let path = target_dir.join("settings.json");
             let settings = sanitize_claude_settings_for_live(&provider.settings_config);
             write_json_file(&path, &settings)?;
         }
@@ -767,7 +801,8 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
                 provider.meta.as_ref().and_then(|m| m.api_format.as_deref()),
             );
 
-            crate::codex_config::write_codex_provider_live_with_catalog(
+            crate::codex_config::write_codex_provider_live_with_catalog_in_dir(
+                target_dir,
                 &provider.settings_config,
                 provider.category.as_deref(),
                 auth,
@@ -777,7 +812,7 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
         }
         AppType::Gemini => {
             // Delegate to write_gemini_live which handles env file writing correctly
-            write_gemini_live(provider)?;
+            write_gemini_live_to_dir(provider, target_dir)?;
         }
         AppType::OpenCode => {
             // OpenCode uses additive mode - write provider to config
@@ -810,7 +845,7 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
 
             match opencode_config_result {
                 Ok(config) => {
-                    opencode_config::set_typed_provider(&provider.id, &config)?;
+                    opencode_config::set_typed_provider_in_dir(target_dir, &provider.id, &config)?;
                     log::info!("OpenCode provider '{}' written to live config", provider.id);
                 }
                 Err(e) => {
@@ -823,7 +858,11 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
                     if config_to_write.get("npm").is_some()
                         || config_to_write.get("options").is_some()
                     {
-                        opencode_config::set_provider(&provider.id, config_to_write)?;
+                        opencode_config::set_provider_in_dir(
+                            target_dir,
+                            &provider.id,
+                            config_to_write,
+                        )?;
                         log::info!(
                             "OpenCode provider '{}' written as raw JSON to live config",
                             provider.id
@@ -848,7 +887,7 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
 
             match openclaw_config_result {
                 Ok(config) => {
-                    openclaw_config::set_typed_provider(&provider.id, &config)?;
+                    openclaw_config::set_typed_provider_in_dir(target_dir, &provider.id, &config)?;
                     log::info!("OpenClaw provider '{}' written to live config", provider.id);
                 }
                 Err(e) => {
@@ -862,7 +901,8 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
                         || provider.settings_config.get("api").is_some()
                         || provider.settings_config.get("models").is_some()
                     {
-                        openclaw_config::set_provider(
+                        openclaw_config::set_provider_in_dir(
+                            target_dir,
                             &provider.id,
                             provider.settings_config.clone(),
                         )?;
@@ -880,7 +920,11 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             }
         }
         AppType::Hermes => {
-            crate::hermes_config::set_provider(&provider.id, provider.settings_config.clone())?;
+            crate::hermes_config::set_provider_in_dir(
+                target_dir,
+                &provider.id,
+                provider.settings_config.clone(),
+            )?;
             log::debug!("Hermes provider '{}' written to live config", provider.id);
         }
     }
@@ -1291,9 +1335,17 @@ pub fn should_import_default_config_on_startup(
 
 /// Write Gemini live configuration with authentication handling
 pub(crate) fn write_gemini_live(provider: &Provider) -> Result<(), AppError> {
+    write_gemini_live_to_dir(provider, &crate::gemini_config::get_gemini_dir())
+}
+
+fn write_gemini_live_to_dir(
+    provider: &Provider,
+    target_dir: &std::path::Path,
+) -> Result<(), AppError> {
     use crate::gemini_config::{
-        get_gemini_settings_path, json_to_env, validate_gemini_settings_strict,
-        write_gemini_env_atomic,
+        get_gemini_env_path_in_dir, get_gemini_settings_path_in_dir, json_to_env,
+        update_selected_type_at_path, validate_gemini_settings_strict,
+        write_gemini_env_atomic_to_path,
     };
 
     // One-time auth type detection to avoid repeated detection
@@ -1305,7 +1357,7 @@ pub(crate) fn write_gemini_live(provider: &Provider) -> Result<(), AppError> {
     // Behavior:
     // - config is object: use it (merge with existing to preserve mcpServers etc.)
     // - config is null or absent: preserve existing file content
-    let settings_path = get_gemini_settings_path();
+    let settings_path = get_gemini_settings_path_in_dir(target_dir);
     let mut config_to_write: Option<Value> = None;
 
     if let Some(config_value) = provider.settings_config.get("config") {
@@ -1345,12 +1397,12 @@ pub(crate) fn write_gemini_live(provider: &Provider) -> Result<(), AppError> {
         GeminiAuthType::GoogleOfficial => {
             // Google Official uses OAuth, no API key validation needed.
             // Write user's env vars as-is (e.g. GEMINI_MODEL, custom vars).
-            write_gemini_env_atomic(&env_map)?;
+            write_gemini_env_atomic_to_path(&get_gemini_env_path_in_dir(target_dir), &env_map)?;
         }
         GeminiAuthType::Packycode | GeminiAuthType::Generic => {
             // API Key mode -- require GEMINI_API_KEY
             validate_gemini_settings_strict(&provider.settings_config)?;
-            write_gemini_env_atomic(&env_map)?;
+            write_gemini_env_atomic_to_path(&get_gemini_env_path_in_dir(target_dir), &env_map)?;
         }
     }
 
@@ -1362,9 +1414,11 @@ pub(crate) fn write_gemini_live(provider: &Provider) -> Result<(), AppError> {
     // - Google Official: OAuth mode
     // - All others: API Key mode
     match auth_type {
-        GeminiAuthType::GoogleOfficial => ensure_google_oauth_security_flag(provider)?,
+        GeminiAuthType::GoogleOfficial => {
+            update_selected_type_at_path(&settings_path, "oauth-personal")?
+        }
         GeminiAuthType::Packycode | GeminiAuthType::Generic => {
-            crate::gemini_config::write_packycode_settings()?;
+            update_selected_type_at_path(&settings_path, "gemini-api-key")?;
         }
     }
 

@@ -19,6 +19,10 @@ pub fn get_gemini_env_path() -> PathBuf {
     get_gemini_dir().join(".env")
 }
 
+pub fn get_gemini_env_path_in_dir(dir: &std::path::Path) -> PathBuf {
+    dir.join(".env")
+}
+
 /// 解析 .env 文件内容为键值对
 ///
 /// 此函数宽松地解析 .env 文件，跳过无效行。
@@ -154,8 +158,13 @@ pub fn read_gemini_env() -> Result<HashMap<String, String>, AppError> {
 
 /// 写入 Gemini .env 文件（原子操作）
 pub fn write_gemini_env_atomic(map: &HashMap<String, String>) -> Result<(), AppError> {
-    let path = get_gemini_env_path();
+    write_gemini_env_atomic_to_path(&get_gemini_env_path(), map)
+}
 
+pub fn write_gemini_env_atomic_to_path(
+    path: &std::path::Path,
+    map: &HashMap<String, String>,
+) -> Result<(), AppError> {
     // 确保目录存在
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
@@ -282,6 +291,10 @@ pub fn get_gemini_settings_path() -> PathBuf {
     get_gemini_dir().join("settings.json")
 }
 
+pub fn get_gemini_settings_path_in_dir(dir: &std::path::Path) -> PathBuf {
+    dir.join("settings.json")
+}
+
 /// 更新 Gemini 目录 settings.json 中的 security.auth.selectedType 字段
 ///
 /// 此函数会：
@@ -292,8 +305,13 @@ pub fn get_gemini_settings_path() -> PathBuf {
 /// # 参数
 /// - `selected_type`: 要设置的 selectedType 值（如 "gemini-api-key" 或 "oauth-personal"）
 fn update_selected_type(selected_type: &str) -> Result<(), AppError> {
-    let settings_path = get_gemini_settings_path();
+    update_selected_type_at_path(&get_gemini_settings_path(), selected_type)
+}
 
+pub fn update_selected_type_at_path(
+    settings_path: &std::path::Path,
+    selected_type: &str,
+) -> Result<(), AppError> {
     // 确保目录存在
     if let Some(parent) = settings_path.parent() {
         fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;

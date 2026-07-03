@@ -8,6 +8,7 @@ mod codex_config;
 mod codex_history_migration;
 mod commands;
 mod config;
+mod config_targets;
 mod database;
 mod deeplink;
 mod error;

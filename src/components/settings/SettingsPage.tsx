@@ -355,6 +355,10 @@ export function SettingsPage({
                             opencodeDir={settings.opencodeConfigDir}
                             openclawDir={settings.openclawConfigDir}
                             hermesDir={settings.hermesConfigDir}
+                            wslHomeDir={settings.wslHomeDir}
+                            onWslHomeChange={(value) =>
+                              updateSettings({ wslHomeDir: value })
+                            }
                             onDirectoryChange={updateDirectory}
                             onBrowseDirectory={browseDirectory}
                             onResetDirectory={resetDirectory}

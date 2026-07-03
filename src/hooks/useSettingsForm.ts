@@ -124,6 +124,8 @@ export function useSettingsForm(): UseSettingsFormResult {
       geminiConfigDir: sanitizeDir(data.geminiConfigDir),
       opencodeConfigDir: sanitizeDir(data.opencodeConfigDir),
       openclawConfigDir: sanitizeDir(data.openclawConfigDir),
+      hermesConfigDir: sanitizeDir(data.hermesConfigDir),
+      wslHomeDir: sanitizeDir(data.wslHomeDir),
       language: normalizedLanguage,
     };
 
@@ -190,6 +192,8 @@ export function useSettingsForm(): UseSettingsFormResult {
         geminiConfigDir: sanitizeDir(serverData.geminiConfigDir),
         opencodeConfigDir: sanitizeDir(serverData.opencodeConfigDir),
         openclawConfigDir: sanitizeDir(serverData.openclawConfigDir),
+        hermesConfigDir: sanitizeDir(serverData.hermesConfigDir),
+        wslHomeDir: sanitizeDir(serverData.wslHomeDir),
         language: normalizedLanguage,
       };
 

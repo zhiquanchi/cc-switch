@@ -24,13 +24,18 @@ pub use claude::{
     sync_single_server_to_claude,
 };
 pub use codex::{
-    import_from_codex, remove_server_from_codex, sync_enabled_to_codex, sync_single_server_to_codex,
+    import_from_codex, remove_server_from_codex, remove_server_from_codex_path,
+    sync_enabled_to_codex, sync_single_server_to_codex, sync_single_server_to_codex_path,
 };
 pub use gemini::{
     import_from_gemini, remove_server_from_gemini, sync_enabled_to_gemini,
     sync_single_server_to_gemini,
 };
-pub use hermes::{import_from_hermes, remove_server_from_hermes, sync_single_server_to_hermes};
+pub use hermes::{
+    import_from_hermes, remove_server_from_hermes, remove_server_from_hermes_dir,
+    sync_single_server_to_hermes, sync_single_server_to_hermes_dir,
+};
 pub use opencode::{
     import_from_opencode, remove_server_from_opencode, sync_single_server_to_opencode,
+    sync_single_server_to_opencode_dir,
 };

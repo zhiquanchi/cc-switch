@@ -556,6 +556,14 @@ impl SkillService {
         })
     }
 
+    fn get_app_skills_dirs(app: &AppType) -> Result<Vec<PathBuf>> {
+        let mut dirs = vec![Self::get_app_skills_dir(app)?];
+        if let Some(wsl_dir) = crate::config_targets::wsl_app_config_dir(app) {
+            dirs.push(wsl_dir.join("skills"));
+        }
+        Ok(dirs)
+    }
+
     // ========== 统一管理方法 ==========
 
     /// 获取所有已安装的 Skills
@@ -1593,7 +1601,25 @@ impl SkillService {
 
         Self::validate_sync_source_dir(&source, directory)?;
 
-        let app_dir = Self::get_app_skills_dir(app)?;
+        let app_dirs = Self::get_app_skills_dirs(app)?;
+        for (index, app_dir) in app_dirs.into_iter().enumerate() {
+            let result = Self::sync_to_app_dir_target(&source, &app_dir, directory, app);
+            if index == 0 {
+                result?;
+            } else if let Err(err) = result {
+                log::warn!("WSL Skill 同步失败: {err:#}");
+            }
+        }
+
+        Ok(())
+    }
+
+    fn sync_to_app_dir_target(
+        source: &Path,
+        app_dir: &Path,
+        directory: &str,
+        app: &AppType,
+    ) -> Result<()> {
         fs::create_dir_all(&app_dir)?;
 
         let dest = app_dir.join(directory);
@@ -1760,12 +1786,21 @@ impl SkillService {
             return Ok(());
         }
 
-        let app_dir = Self::get_app_skills_dir(app)?;
-        let skill_path = app_dir.join(directory);
-
-        if skill_path.exists() || Self::is_symlink(&skill_path) {
-            Self::remove_path(&skill_path)?;
-            log::debug!("Skill {directory} 已从 {app:?} 删除");
+        let app_dirs = Self::get_app_skills_dirs(app)?;
+        for (index, app_dir) in app_dirs.into_iter().enumerate() {
+            let skill_path = app_dir.join(directory);
+            let result = (|| -> Result<()> {
+                if skill_path.exists() || Self::is_symlink(&skill_path) {
+                    Self::remove_path(&skill_path)?;
+                    log::debug!("Skill {directory} 已从 {app:?} 删除");
+                }
+                Ok(())
+            })();
+            if index == 0 {
+                result?;
+            } else if let Err(err) = result {
+                log::warn!("WSL Skill 删除失败: {err:#}");
+            }
         }
 
         Ok(())
@@ -1779,7 +1814,11 @@ impl SkillService {
 
         let skills = db.get_all_installed_skills()?;
         let ssot_dir = Self::get_ssot_dir()?;
-        let app_dir = Self::get_app_skills_dir(app)?;
+        let app_dirs = Self::get_app_skills_dirs(app)?;
+        let app_dir = app_dirs
+            .first()
+            .cloned()
+            .ok_or_else(|| anyhow!("No skill target directory for {app:?}"))?;
 
         let indexed_skills: HashMap<String, &InstalledSkill> = skills
             .values()

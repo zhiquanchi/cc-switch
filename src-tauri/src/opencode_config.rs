@@ -46,6 +46,10 @@ pub fn get_opencode_config_path() -> PathBuf {
     get_opencode_dir().join("opencode.json")
 }
 
+pub fn get_opencode_config_path_in_dir(dir: &std::path::Path) -> PathBuf {
+    dir.join("opencode.json")
+}
+
 /// 获取 OpenCode SQLite 数据库路径
 /// 优先级: OPENCODE_DB 环境变量 > XDG_DATA_HOME > ~/.local/share/opencode
 pub fn get_opencode_db_path() -> PathBuf {
@@ -86,8 +90,10 @@ pub fn get_opencode_env_path() -> PathBuf {
 }
 
 pub fn read_opencode_config() -> Result<Value, AppError> {
-    let path = get_opencode_config_path();
+    read_opencode_config_from_path(&get_opencode_config_path())
+}
 
+pub fn read_opencode_config_from_path(path: &std::path::Path) -> Result<Value, AppError> {
     if !path.exists() {
         return Ok(json!({
             "$schema": "https://opencode.ai/config.json"
@@ -104,8 +110,14 @@ pub fn read_opencode_config() -> Result<Value, AppError> {
 }
 
 pub fn write_opencode_config(config: &Value) -> Result<(), AppError> {
-    let path = get_opencode_config_path();
-    write_json_file(&path, config)?;
+    write_opencode_config_to_path(&get_opencode_config_path(), config)
+}
+
+pub fn write_opencode_config_to_path(
+    path: &std::path::Path,
+    config: &Value,
+) -> Result<(), AppError> {
+    write_json_file(path, config)?;
 
     log::debug!("OpenCode config written to {path:?}");
     Ok(())
@@ -121,7 +133,12 @@ pub fn get_providers() -> Result<Map<String, Value>, AppError> {
 }
 
 pub fn set_provider(id: &str, config: Value) -> Result<(), AppError> {
-    let mut full_config = read_opencode_config()?;
+    set_provider_in_dir(&get_opencode_dir(), id, config)
+}
+
+pub fn set_provider_in_dir(dir: &std::path::Path, id: &str, config: Value) -> Result<(), AppError> {
+    let path = get_opencode_config_path_in_dir(dir);
+    let mut full_config = read_opencode_config_from_path(&path)?;
 
     if full_config.get("provider").is_none() {
         full_config["provider"] = json!({});
@@ -134,7 +151,7 @@ pub fn set_provider(id: &str, config: Value) -> Result<(), AppError> {
         providers.insert(id.to_string(), config);
     }
 
-    write_opencode_config(&full_config)
+    write_opencode_config_to_path(&path, &full_config)
 }
 
 pub fn remove_provider(id: &str) -> Result<(), AppError> {
@@ -170,6 +187,15 @@ pub fn set_typed_provider(id: &str, config: &OpenCodeProviderConfig) -> Result<(
     set_provider(id, value)
 }
 
+pub fn set_typed_provider_in_dir(
+    dir: &std::path::Path,
+    id: &str,
+    config: &OpenCodeProviderConfig,
+) -> Result<(), AppError> {
+    let value = serde_json::to_value(config).map_err(|e| AppError::JsonSerialize { source: e })?;
+    set_provider_in_dir(dir, id, value)
+}
+
 pub fn get_mcp_servers() -> Result<Map<String, Value>, AppError> {
     let config = read_opencode_config()?;
     Ok(config
@@ -180,7 +206,16 @@ pub fn get_mcp_servers() -> Result<Map<String, Value>, AppError> {
 }
 
 pub fn set_mcp_server(id: &str, config: Value) -> Result<(), AppError> {
-    let mut full_config = read_opencode_config()?;
+    set_mcp_server_in_dir(&get_opencode_dir(), id, config)
+}
+
+pub fn set_mcp_server_in_dir(
+    dir: &std::path::Path,
+    id: &str,
+    config: Value,
+) -> Result<(), AppError> {
+    let path = get_opencode_config_path_in_dir(dir);
+    let mut full_config = read_opencode_config_from_path(&path)?;
 
     if full_config.get("mcp").is_none() {
         full_config["mcp"] = json!({});
@@ -190,17 +225,22 @@ pub fn set_mcp_server(id: &str, config: Value) -> Result<(), AppError> {
         mcp.insert(id.to_string(), config);
     }
 
-    write_opencode_config(&full_config)
+    write_opencode_config_to_path(&path, &full_config)
 }
 
 pub fn remove_mcp_server(id: &str) -> Result<(), AppError> {
-    let mut config = read_opencode_config()?;
+    remove_mcp_server_in_dir(&get_opencode_dir(), id)
+}
+
+pub fn remove_mcp_server_in_dir(dir: &std::path::Path, id: &str) -> Result<(), AppError> {
+    let path = get_opencode_config_path_in_dir(dir);
+    let mut config = read_opencode_config_from_path(&path)?;
 
     if let Some(mcp) = config.get_mut("mcp").and_then(|v| v.as_object_mut()) {
         mcp.remove(id);
     }
 
-    write_opencode_config(&config)
+    write_opencode_config_to_path(&path, &config)
 }
 
 pub fn add_plugin(plugin_name: &str) -> Result<(), AppError> {

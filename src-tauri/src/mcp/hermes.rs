@@ -201,6 +201,30 @@ pub fn sync_single_server_to_hermes(
     })
 }
 
+pub fn sync_single_server_to_hermes_dir(
+    dir: &std::path::Path,
+    id: &str,
+    server_spec: &Value,
+) -> Result<(), AppError> {
+    let hermes_spec = convert_to_hermes_format(server_spec)?;
+    let id_owned = id.to_string();
+
+    hermes_config::update_mcp_servers_yaml_in_dir(dir, |servers| {
+        let id_yaml = serde_yaml::Value::String(id_owned.clone());
+
+        let merged_json = if let Some(existing_yaml) = servers.get(&id_yaml) {
+            let existing_json = hermes_config::yaml_to_json(existing_yaml)?;
+            merge_hermes_spec(&existing_json, &hermes_spec)
+        } else {
+            hermes_spec.clone()
+        };
+
+        let merged_yaml_value = hermes_config::json_to_yaml(&merged_json)?;
+        servers.insert(id_yaml, merged_yaml_value);
+        Ok(())
+    })
+}
+
 /// Merge new spec into existing Hermes spec, preserving Hermes-specific fields.
 ///
 /// Core fields (command, args, env, url, headers) come from `new_spec`.
@@ -240,6 +264,14 @@ pub fn remove_server_from_hermes(id: &str) -> Result<(), AppError> {
 
     let id_owned = id.to_string();
     hermes_config::update_mcp_servers_yaml(|servers| {
+        servers.remove(serde_yaml::Value::String(id_owned.clone()));
+        Ok(())
+    })
+}
+
+pub fn remove_server_from_hermes_dir(dir: &std::path::Path, id: &str) -> Result<(), AppError> {
+    let id_owned = id.to_string();
+    hermes_config::update_mcp_servers_yaml_in_dir(dir, |servers| {
         servers.remove(serde_yaml::Value::String(id_owned.clone()));
         Ok(())
     })

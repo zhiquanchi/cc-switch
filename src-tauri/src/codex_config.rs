@@ -157,6 +157,18 @@ pub fn get_codex_model_catalog_path() -> PathBuf {
     get_codex_config_dir().join(CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME)
 }
 
+pub fn get_codex_auth_path_in_dir(dir: &Path) -> PathBuf {
+    dir.join("auth.json")
+}
+
+pub fn get_codex_config_path_in_dir(dir: &Path) -> PathBuf {
+    dir.join("config.toml")
+}
+
+pub fn get_codex_model_catalog_path_in_dir(dir: &Path) -> PathBuf {
+    dir.join(CC_SWITCH_CODEX_MODEL_CATALOG_FILENAME)
+}
+
 /// 获取 Codex 供应商配置文件路径
 #[allow(dead_code)]
 pub fn get_codex_provider_paths(
@@ -192,8 +204,16 @@ pub fn write_codex_live_atomic(
     auth: &Value,
     config_text_opt: Option<&str>,
 ) -> Result<(), AppError> {
-    let auth_path = get_codex_auth_path();
-    let config_path = get_codex_config_path();
+    write_codex_live_atomic_in_dir(&get_codex_config_dir(), auth, config_text_opt)
+}
+
+pub fn write_codex_live_atomic_in_dir(
+    dir: &Path,
+    auth: &Value,
+    config_text_opt: Option<&str>,
+) -> Result<(), AppError> {
+    let auth_path = get_codex_auth_path_in_dir(dir);
+    let config_path = get_codex_config_path_in_dir(dir);
 
     if let Some(parent) = auth_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
@@ -286,7 +306,14 @@ pub(crate) fn is_custom_codex_model_provider_id(id: &str) -> bool {
 /// and provider-scoped bearer tokens live in `config.toml`. Provider switches
 /// should not overwrite the user's ChatGPT login cache.
 pub fn write_codex_live_config_atomic(config_text_opt: Option<&str>) -> Result<(), AppError> {
-    let config_path = get_codex_config_path();
+    write_codex_live_config_atomic_in_dir(&get_codex_config_dir(), config_text_opt)
+}
+
+pub fn write_codex_live_config_atomic_in_dir(
+    dir: &Path,
+    config_text_opt: Option<&str>,
+) -> Result<(), AppError> {
+    let config_path = get_codex_config_path_in_dir(dir);
     let cfg_text = match config_text_opt {
         Some(config_text) => config_text.to_string(),
         None => String::new(),
@@ -946,7 +973,21 @@ pub fn prepare_codex_config_text_with_model_catalog(
     config_text: &str,
     profile: CodexCatalogToolProfile,
 ) -> Result<String, AppError> {
-    let catalog_path = get_codex_model_catalog_path();
+    prepare_codex_config_text_with_model_catalog_in_dir(
+        &get_codex_config_dir(),
+        settings,
+        config_text,
+        profile,
+    )
+}
+
+pub fn prepare_codex_config_text_with_model_catalog_in_dir(
+    dir: &Path,
+    settings: &Value,
+    config_text: &str,
+    profile: CodexCatalogToolProfile,
+) -> Result<String, AppError> {
+    let catalog_path = get_codex_model_catalog_path_in_dir(dir);
 
     if let Some(catalog) = codex_model_catalog_from_settings(settings, config_text, profile)? {
         let config_text = set_codex_model_catalog_json_field(config_text, Some(&catalog_path))?;
@@ -1152,11 +1193,31 @@ pub fn write_codex_provider_live_with_catalog(
     config_text: Option<&str>,
     profile: CodexCatalogToolProfile,
 ) -> Result<(), AppError> {
+    write_codex_provider_live_with_catalog_in_dir(
+        &get_codex_config_dir(),
+        settings,
+        category,
+        auth,
+        config_text,
+        profile,
+    )
+}
+
+pub fn write_codex_provider_live_with_catalog_in_dir(
+    dir: &Path,
+    settings: &Value,
+    category: Option<&str>,
+    auth: &Value,
+    config_text: Option<&str>,
+    profile: CodexCatalogToolProfile,
+) -> Result<(), AppError> {
     let prepared_config = config_text
-        .map(|text| prepare_codex_config_text_with_model_catalog(settings, text, profile))
+        .map(|text| {
+            prepare_codex_config_text_with_model_catalog_in_dir(dir, settings, text, profile)
+        })
         .transpose()?;
 
-    write_codex_live_for_provider(category, auth, prepared_config.as_deref())
+    write_codex_live_for_provider_in_dir(dir, category, auth, prepared_config.as_deref())
 }
 
 /// Extract a provider-scoped `experimental_bearer_token` from Codex `config.toml`.
@@ -1486,6 +1547,15 @@ pub fn write_codex_live_for_provider(
     auth: &Value,
     config_text: Option<&str>,
 ) -> Result<(), AppError> {
+    write_codex_live_for_provider_in_dir(&get_codex_config_dir(), category, auth, config_text)
+}
+
+pub fn write_codex_live_for_provider_in_dir(
+    dir: &Path,
+    category: Option<&str>,
+    auth: &Value,
+    config_text: Option<&str>,
+) -> Result<(), AppError> {
     let unified_official_config =
         if category == Some("official") && crate::settings::unify_codex_session_history() {
             Some(inject_codex_unified_session_bucket(
@@ -1501,10 +1571,10 @@ pub fn write_codex_live_for_provider(
             && !crate::settings::preserve_codex_official_auth_on_switch());
 
     if should_write_auth {
-        write_codex_live_atomic(auth, config_text)
+        write_codex_live_atomic_in_dir(dir, auth, config_text)
     } else {
         let live_config = prepare_codex_provider_live_config(auth, config_text.unwrap_or(""))?;
-        write_codex_live_config_atomic(Some(&live_config))
+        write_codex_live_config_atomic_in_dir(dir, Some(&live_config))
     }
 }
 
